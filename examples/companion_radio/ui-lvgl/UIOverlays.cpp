@@ -162,15 +162,41 @@ static void about_open_cb(lv_event_t* e) {
 void aboutOpen() { about_open_cb(NULL); }
 
 // ---- first-boot setup wizard: region, name, timezone ----
+#define WIZ_MAX_PRESETS 4   // step 0 lays the presets out as a 2x2 grid
 static lv_obj_t* wiz_title;
 static lv_obj_t* wiz_steps[3];
-static lv_obj_t* wiz_dd;
+static lv_obj_t* wiz_preset_btns[WIZ_MAX_PRESETS];
+static lv_obj_t* wiz_name_hint;
 static lv_obj_t* wiz_name_ta;
 static lv_obj_t* wiz_kb;
 static lv_obj_t* wiz_tz_lbl;
 static lv_obj_t* wiz_next_lbl;
 static int wiz_step = 0;
 static int wiz_tz = -5;
+static int wiz_preset = -1;   // -1 until the user picks one: never apply a region silently
+
+static void wizSelectPreset(int idx) {
+  wiz_preset = idx;
+  for (int i = 0; i < WIZ_MAX_PRESETS; i++) {
+    if (wiz_preset_btns[i] == NULL) continue;
+    if (i == idx) lv_obj_add_state(wiz_preset_btns[i], LV_STATE_CHECKED);
+    else lv_obj_remove_state(wiz_preset_btns[i], LV_STATE_CHECKED);
+  }
+}
+static void wiz_preset_cb(lv_event_t* e) { wizSelectPreset((int)(intptr_t) lv_event_get_user_data(e)); }
+
+// keyboard up: drop the hint and lift the field into the clear band above the keys
+static void wizNameKbShown(bool shown) {
+  if (shown) {
+    lv_obj_add_flag(wiz_name_hint, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_align(wiz_name_ta, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_remove_flag(wiz_kb, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    lv_obj_remove_flag(wiz_name_hint, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_align(wiz_name_ta, LV_ALIGN_TOP_MID, 0, 44);
+    lv_obj_add_flag(wiz_kb, LV_OBJ_FLAG_HIDDEN);
+  }
+}
 
 static void wizShowStep(int s) {
   wiz_step = s;
@@ -181,11 +207,12 @@ static void wizShowStep(int s) {
     else lv_obj_add_flag(wiz_steps[i], LV_OBJ_FLAG_HIDDEN);
   }
   lv_label_set_text(wiz_next_lbl, s == 2 ? LV_SYMBOL_OK " Finish" : "Next " LV_SYMBOL_RIGHT);
-  if (s != 1) lv_obj_add_flag(wiz_kb, LV_OBJ_FLAG_HIDDEN);
+  if (s != 1) wizNameKbShown(false);
 }
 static void wiz_next_cb(lv_event_t* e) {
+  if (wiz_step == 0 && wiz_preset < 0) { ui->showToast("Pick your region first"); return; }
   if (wiz_step < 2) { wizShowStep(wiz_step + 1); return; }
-  ui->finishSetupWizard((int) lv_dropdown_get_selected(wiz_dd), lv_textarea_get_text(wiz_name_ta), wiz_tz, true);
+  ui->finishSetupWizard(wiz_preset, lv_textarea_get_text(wiz_name_ta), wiz_tz, true);
 }
 static void wiz_skip_cb(lv_event_t* e) { ui->finishSetupWizard(0, "", wiz_tz, false); }
 static void wiz_tz_cb(lv_event_t* e) {
@@ -196,8 +223,8 @@ static void wiz_tz_cb(lv_event_t* e) {
 }
 static void wiz_ta_cb(lv_event_t* e) {
   lv_event_code_t code = lv_event_get_code(e);
-  if (code == LV_EVENT_FOCUSED || code == LV_EVENT_CLICKED) lv_obj_remove_flag(wiz_kb, LV_OBJ_FLAG_HIDDEN);
-  else if (code == LV_EVENT_DEFOCUSED || code == LV_EVENT_CANCEL || code == LV_EVENT_READY) lv_obj_add_flag(wiz_kb, LV_OBJ_FLAG_HIDDEN);
+  if (code == LV_EVENT_FOCUSED || code == LV_EVENT_CLICKED) wizNameKbShown(true);
+  else if (code == LV_EVENT_DEFOCUSED || code == LV_EVENT_CANCEL || code == LV_EVENT_READY) wizNameKbShown(false);
 }
 
 static lv_obj_t* makeOverlay() {
@@ -256,6 +283,7 @@ void buildPolishOverlays() {
   lv_textarea_set_placeholder_text(chopt_ta, "Channel name");
   lv_obj_set_width(chopt_ta, 304);
   lv_obj_set_height(chopt_ta, LV_SIZE_CONTENT);
+  lv_obj_set_style_pad_ver(chopt_ta, 5, 0);
   lv_obj_align(chopt_ta, LV_ALIGN_TOP_MID, 0, 40);
   lv_obj_set_style_opa(chopt_ta, LV_OPA_TRANSP, LV_PART_CURSOR);
   lv_obj_set_style_opa(chopt_ta, LV_OPA_COVER, LV_PART_CURSOR | LV_STATE_FOCUSED);
@@ -267,7 +295,7 @@ void buildPolishOverlays() {
   lv_keyboard_set_textarea(chopt_kb, chopt_ta);
   kbAttachShiftBehavior(chopt_kb);
   lv_obj_set_size(chopt_kb, 320, KB_HEIGHT);
-  lv_obj_align(chopt_kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+  lv_obj_align(chopt_kb, LV_ALIGN_BOTTOM_MID, 0, KB_PAD_OFFSET);
   lv_obj_add_flag(chopt_kb, LV_OBJ_FLAG_HIDDEN);
 
   about_scr = makeOverlay();
@@ -293,39 +321,57 @@ void buildPolishOverlays() {
   lv_obj_align(wiz_title, LV_ALIGN_TOP_LEFT, 0, 0);
   for (int i = 0; i < 3; i++) {
     wiz_steps[i] = lv_obj_create(wiz_scr);
-    lv_obj_set_size(wiz_steps[i], 304, 150);
+    lv_obj_set_size(wiz_steps[i], 304, 160);
     lv_obj_align(wiz_steps[i], LV_ALIGN_TOP_MID, 0, 26);
     lv_obj_set_style_bg_opa(wiz_steps[i], LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(wiz_steps[i], 0, 0);
     lv_obj_set_style_pad_all(wiz_steps[i], 0, 0);
     lv_obj_remove_flag(wiz_steps[i], LV_OBJ_FLAG_SCROLLABLE);
   }
-  // step 0: region preset
+  // step 0: region preset - one button per preset, nothing picked until tapped
   lv_obj_t* l0 = lv_label_create(wiz_steps[0]);
   lv_obj_set_width(l0, 300);
   lv_label_set_long_mode(l0, LV_LABEL_LONG_WRAP);
-  lv_label_set_text(l0, "Pick your region so the radio settings match the other MeshCore nodes around you. You can change this later in Settings.");
+  lv_obj_set_style_text_font(l0, &lv_font_montserrat_12, 0);
+  lv_label_set_text(l0, "Pick the radio preset the MeshCore nodes near you use. You can change it later in Settings.");
   lv_obj_align(l0, LV_ALIGN_TOP_LEFT, 0, 0);
-  char opts[200] = "";
-  for (int i = 0; i < settingsPresetCount(); i++) {
-    if (i > 0) strlcat(opts, "\n", sizeof(opts));
-    strlcat(opts, settingsPresetLabel(i), sizeof(opts));
+  for (int i = 0; i < WIZ_MAX_PRESETS; i++) {
+    wiz_preset_btns[i] = NULL;
+    if (i >= settingsPresetCount()) continue;
+    lv_obj_t* b = lv_button_create(wiz_steps[0]);
+    lv_obj_set_size(b, 149, 56);
+    lv_obj_align(b, LV_ALIGN_TOP_LEFT, (i % 2) * 155, 38 + (i / 2) * 62);
+    lv_obj_set_style_bg_color(b, lv_color_hex(COL_CARD), 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(COL_ACCENT_D), LV_STATE_CHECKED);
+    lv_obj_set_style_border_color(b, lv_color_hex(COL_ACCENT), LV_STATE_CHECKED);
+    lv_obj_set_style_border_width(b, 2, LV_STATE_CHECKED);
+    lv_obj_set_style_pad_all(b, 4, 0);
+    lv_obj_add_event_cb(b, wiz_preset_cb, LV_EVENT_CLICKED, (void*)(intptr_t) i);
+    lv_obj_t* name = lv_label_create(b);
+    lv_obj_set_style_text_font(name, &lv_font_montserrat_12, 0);
+    lv_label_set_text(name, settingsPresetLabel(i));
+    lv_obj_align(name, LV_ALIGN_TOP_MID, 0, 2);
+    char detail[40];
+    settingsPresetDescribe(i, detail, sizeof(detail));
+    lv_obj_t* params = lv_label_create(b);
+    lv_obj_set_style_text_font(params, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(params, lv_color_hex(COL_MUTED), 0);
+    lv_label_set_text(params, detail);
+    lv_obj_align(params, LV_ALIGN_BOTTOM_MID, 0, -2);
+    wiz_preset_btns[i] = b;
   }
-  wiz_dd = lv_dropdown_create(wiz_steps[0]);
-  lv_obj_set_size(wiz_dd, 300, 34);
-  lv_obj_align(wiz_dd, LV_ALIGN_TOP_MID, 0, 80);
-  lv_dropdown_set_options(wiz_dd, opts);
   // step 1: node name
-  lv_obj_t* l1 = lv_label_create(wiz_steps[1]);
-  lv_obj_set_width(l1, 300);
-  lv_label_set_long_mode(l1, LV_LABEL_LONG_WRAP);
-  lv_label_set_text(l1, "Give this node a name. Other people see it in their contact list.");
-  lv_obj_align(l1, LV_ALIGN_TOP_LEFT, 0, 0);
+  wiz_name_hint = lv_label_create(wiz_steps[1]);
+  lv_obj_set_width(wiz_name_hint, 300);
+  lv_label_set_long_mode(wiz_name_hint, LV_LABEL_LONG_WRAP);
+  lv_label_set_text(wiz_name_hint, "Give this node a name. Other people see it in their contact list.");
+  lv_obj_align(wiz_name_hint, LV_ALIGN_TOP_LEFT, 0, 0);
   wiz_name_ta = lv_textarea_create(wiz_steps[1]);
   lv_textarea_set_one_line(wiz_name_ta, true);
   lv_textarea_set_max_length(wiz_name_ta, 30);
   lv_obj_set_width(wiz_name_ta, 300);
   lv_obj_set_height(wiz_name_ta, LV_SIZE_CONTENT);
+  lv_obj_set_style_pad_ver(wiz_name_ta, 5, 0);
   lv_obj_align(wiz_name_ta, LV_ALIGN_TOP_MID, 0, 44);
   lv_obj_set_style_opa(wiz_name_ta, LV_OPA_TRANSP, LV_PART_CURSOR);
   lv_obj_set_style_opa(wiz_name_ta, LV_OPA_COVER, LV_PART_CURSOR | LV_STATE_FOCUSED);
@@ -349,11 +395,12 @@ void buildPolishOverlays() {
   lv_keyboard_set_textarea(wiz_kb, wiz_name_ta);
   kbAttachShiftBehavior(wiz_kb);
   lv_obj_set_size(wiz_kb, 320, KB_HEIGHT);
-  lv_obj_align(wiz_kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+  lv_obj_align(wiz_kb, LV_ALIGN_BOTTOM_MID, 0, KB_PAD_OFFSET);
   lv_obj_add_flag(wiz_kb, LV_OBJ_FLAG_HIDDEN);
   wiz_tz = settingsTzOffset();
   lv_label_set_text_fmt(wiz_tz_lbl, "UTC%+d", wiz_tz);
   if (ui->nodePrefs() != NULL) lv_textarea_set_text(wiz_name_ta, ui->nodePrefs()->node_name);
+  wizSelectPreset(-1);
   wizShowStep(0);
   wizard_pending = !SPIFFS.exists("/setup_done");
 }
@@ -375,6 +422,7 @@ void wizardOpen() {
   wiz_tz = settingsTzOffset();
   lv_label_set_text_fmt(wiz_tz_lbl, "UTC%+d", wiz_tz);
   wizSuggestTz();
+  wizSelectPreset(settingsPresetMatch());   // re-run: start on what's in use now
   wizShowStep(0);
   lv_obj_remove_flag(wiz_scr, LV_OBJ_FLAG_HIDDEN);
 }

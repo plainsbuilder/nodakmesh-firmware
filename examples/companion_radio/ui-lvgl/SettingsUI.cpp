@@ -82,12 +82,8 @@ void settingsRefreshRows() {
   if (s_task == NULL) return;
   char buf[48];
   lv_label_set_text(name_val, prefs()->node_name);
-  const char* preset = "Custom";
-  for (unsigned i = 0; i < NUM_RADIO_PRESETS; i++) {
-    const RadioPreset* r = &RADIO_PRESETS[i];
-    if (fabsf(prefs()->freq - r->freq) < 0.001f && fabsf((float)prefs()->bw - r->bw) < 0.1f &&
-        prefs()->sf == r->sf && prefs()->cr == r->cr) { preset = r->short_label; break; }
-  }
+  int match = settingsPresetMatch();
+  const char* preset = match >= 0 ? RADIO_PRESETS[match].short_label : "Custom";
   if (prefs()->isRepeatEn()) {
     char rbuf[64];
     snprintf(rbuf, sizeof(rbuf), "%s + repeat", preset);   // e.g. "US narrow + repeat"
@@ -335,6 +331,19 @@ void settingsSetTzOffset(int hours) {
 int settingsPresetCount() { return (int) NUM_RADIO_PRESETS; }
 const char* settingsPresetLabel(int idx) {
   return (idx >= 0 && idx < (int) NUM_RADIO_PRESETS) ? RADIO_PRESETS[idx].label : "";
+}
+void settingsPresetDescribe(int idx, char* buf, size_t len) {
+  if (idx < 0 || idx >= (int) NUM_RADIO_PRESETS) { if (len > 0) buf[0] = 0; return; }
+  const RadioPreset* r = &RADIO_PRESETS[idx];
+  snprintf(buf, len, "%.3f  BW%g SF%d", r->freq, (double)r->bw, r->sf);
+}
+int settingsPresetMatch() {
+  for (unsigned i = 0; i < NUM_RADIO_PRESETS; i++) {
+    const RadioPreset* r = &RADIO_PRESETS[i];
+    if (fabsf(prefs()->freq - r->freq) < 0.001f && fabsf((float)prefs()->bw - r->bw) < 0.1f &&
+        prefs()->sf == r->sf && prefs()->cr == r->cr) return (int) i;
+  }
+  return -1;
 }
 void settingsApplyPreset(int idx) {
   if (idx < 0 || idx >= (int) NUM_RADIO_PRESETS) return;
@@ -601,7 +610,7 @@ void settingsBuildExtras(lv_obj_t* parent, UITask* task) {
   lv_keyboard_set_textarea(edit_kb, edit_ta);
   kbAttachShiftBehavior(edit_kb);
   lv_obj_set_size(edit_kb, 320, S_KB_H);
-  lv_obj_align(edit_kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+  lv_obj_align(edit_kb, LV_ALIGN_BOTTOM_MID, 0, KB_PAD_OFFSET);
   lv_obj_add_flag(edit_kb, LV_OBJ_FLAG_HIDDEN);
 
   radio_scr = makeDialog(NULL);
@@ -616,11 +625,14 @@ void settingsBuildExtras(lv_obj_t* parent, UITask* task) {
   lv_obj_set_style_text_color(rh, lv_color_hex(S_COL_MUTED), 0);
   lv_obj_align(rh, LV_ALIGN_TOP_LEFT, 0, 20);
 
-  static const char* labels[4] = {"Frequency MHz", "Bandwidth kHz", "Spread factor", "Coding rate"};
+  // short labels: each column is only 72 px wide at this font
+  static const char* labels[4] = {"Freq MHz", "BW kHz", "SF", "CR"};
   for (int i = 0; i < 4; i++) {
     int x = i * 76;
     lv_obj_t* l = lv_label_create(radio_scr);
     lv_label_set_text(l, labels[i]);
+    lv_obj_set_width(l, 72);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(l, lv_color_hex(S_COL_MUTED), 0);
     lv_obj_align(l, LV_ALIGN_TOP_LEFT, x + 1, 40);
@@ -646,22 +658,24 @@ void settingsBuildExtras(lv_obj_t* parent, UITask* task) {
 
   // repeat mode: this node forwards other nodes' packets
   lv_obj_t* rep_lbl = lv_label_create(radio_scr);
-  lv_label_set_text(rep_lbl, "Repeat mode");
   lv_obj_set_style_text_color(rep_lbl, lv_color_hex(S_COL_MUTED), 0);
   lv_label_set_text(rep_lbl, "Repeat mode - this node relays for others");
   lv_obj_set_style_text_font(rep_lbl, &lv_font_montserrat_12, 0);
+  lv_obj_set_width(rep_lbl, 240);   // stops short of the switch
+  lv_label_set_long_mode(rep_lbl, LV_LABEL_LONG_CLIP);
   lv_obj_align(rep_lbl, LV_ALIGN_TOP_LEFT, 2, 142);
   radio_repeat_sw = lv_switch_create(radio_scr);
   lv_obj_align(radio_repeat_sw, LV_ALIGN_TOP_RIGHT, -2, 134);
   lv_obj_add_event_cb(radio_repeat_sw, radio_repeat_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
+  // one line: anything taller runs into the Apply / Cancel row
   lv_obj_t* rep_hint = lv_label_create(radio_scr);
-  lv_label_set_text(rep_hint, "Repeat mode runs on its own frequency\n(433.000 / 869.495 / 918.000 MHz) and is\nset here automatically.");
+  lv_label_set_text(rep_hint, "Repeat mode sets its own frequency automatically.");
   lv_obj_set_style_text_font(rep_hint, &lv_font_montserrat_12, 0);
   lv_obj_set_style_text_color(rep_hint, lv_color_hex(S_COL_MUTED), 0);
   lv_obj_set_width(rep_hint, 304);
-  lv_label_set_long_mode(rep_hint, LV_LABEL_LONG_WRAP);
-  lv_obj_align(rep_hint, LV_ALIGN_TOP_LEFT, 2, 162);
+  lv_label_set_long_mode(rep_hint, LV_LABEL_LONG_CLIP);
+  lv_obj_align(rep_hint, LV_ALIGN_TOP_LEFT, 2, 166);
 
   radio_apply_btn = makeBtn(radio_scr, LV_SYMBOL_OK " Apply", radio_apply_cb, NULL, LV_ALIGN_BOTTOM_LEFT, 0, -2, 148);
   radio_apply_lbl = lv_obj_get_child(radio_apply_btn, 0);
