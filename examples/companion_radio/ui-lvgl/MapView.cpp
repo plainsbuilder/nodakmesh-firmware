@@ -2,18 +2,13 @@
 
 #include <Arduino.h>
 #include <math.h>
-#include <SD_MMC.h>
+#include "SdCard.h"
 #include <SPIFFS.h>
 #include <esp_heap_caps.h>
 #include <stdio.h>
 #include "../MyMesh.h"
 #include "target.h"
 #include "UITask.h"
-
-// Wio Tracker L2 Pro SDIO 1-bit wiring; TF power rail is raised by board init
-#define SD_PIN_CLK 2
-#define SD_PIN_CMD 3
-#define SD_PIN_D0  1
 
 #define TILE_PX   256
 #define GRID_COLS 3
@@ -162,15 +157,14 @@ static bool loadPakTile(lv_obj_t* img, int z, int tx, int ty, int slot) {
 
 static bool sdMount() {
   if (sd_ok) return true;
-  SD_MMC.setPins(SD_PIN_CLK, SD_PIN_CMD, SD_PIN_D0);
-  sd_ok = SD_MMC.begin("/sdcard", true /* 1-bit mode */);
+  sd_ok = uiSdBegin();
   MESH_DEBUG_PRINTLN("map: SD %s", sd_ok ? "mounted" : "mount FAILED");
   if (sd_ok) {
-    File d = SD_MMC.open("/maps");
+    File d = UI_SD.open("/maps");
     day_set_ok = d && d.isDirectory();
     MESH_DEBUG_PRINTLN("map: tile store %s", day_set_ok ? "present" : "missing");
     if (d) d.close();
-    File dd = SD_MMC.open("/maps_dark");
+    File dd = UI_SD.open("/maps_dark");
     dark_set_ok = dd && dd.isDirectory();
     if (dd) dd.close();
     MESH_DEBUG_PRINTLN("map: dark set %s", dark_set_ok ? "present" : "not on card");

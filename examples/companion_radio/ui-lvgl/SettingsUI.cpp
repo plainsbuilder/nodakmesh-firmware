@@ -6,7 +6,7 @@
 #include "../MyMesh.h"
 #include "target.h"
 #include <SPIFFS.h>
-#include <SD_MMC.h>
+#include "SdCard.h"
 
 #define S_COL_CARD   0x16233B
 #define S_COL_ACCENT 0x58B4FF
@@ -375,7 +375,7 @@ static bool factory_armed = false;
 static lv_obj_t* restore_lbl;
 static lv_obj_t* factory_lbl;
 
-static bool sdReady() { return SD_MMC.cardType() != CARD_NONE && SD_MMC.cardType() != CARD_UNKNOWN; }
+static bool sdReady() { return uiSdPresent(); }
 
 static int copyAll(fs::FS& src_fs, const char* src_dir, fs::FS& dst_fs, const char* dst_dir) {
   File root = src_fs.open(src_dir);
@@ -404,8 +404,8 @@ static int copyAll(fs::FS& src_fs, const char* src_dir, fs::FS& dst_fs, const ch
 
 static void backup_cb(lv_event_t* e) {
   if (!sdReady()) { s_task->showToast("No SD card"); return; }
-  SD_MMC.mkdir(BACKUP_DIR);
-  int n = copyAll(SPIFFS, "/", SD_MMC, BACKUP_DIR);
+  UI_SD.mkdir(BACKUP_DIR);
+  int n = copyAll(SPIFFS, "/", UI_SD, BACKUP_DIR);
   char buf[48];
   snprintf(buf, sizeof(buf), n >= 0 ? "Backed up %d files to SD" : "Backup failed", n);
   s_task->showToast(buf);
@@ -418,7 +418,7 @@ static void restore_cb(lv_event_t* e) {
     lv_label_set_text(restore_lbl, "SURE? (overwrites node)");
     return;
   }
-  int n = copyAll(SD_MMC, BACKUP_DIR, SPIFFS, "");
+  int n = copyAll(UI_SD, BACKUP_DIR, SPIFFS, "");
   if (n > 0) {
     s_task->showToast("Restored - rebooting");
     lv_refr_now(NULL);

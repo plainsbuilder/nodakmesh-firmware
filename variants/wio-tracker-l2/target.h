@@ -9,7 +9,7 @@
 #include <helpers/SensorManager.h>
 #include <helpers/sensors/EnvironmentSensorManager.h>
 #include <helpers/sensors/MicroNMEALocationProvider.h>
-#include "GpsTap.h"
+#include <helpers/sensors/GpsTap.h>
 #ifdef DISPLAY_CLASS
   #include "WioTrackerL2Display.h"
   #include <helpers/ui/MomentaryButton.h>

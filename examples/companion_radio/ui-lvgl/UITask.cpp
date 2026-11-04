@@ -5,7 +5,7 @@
 #include "UICommon.h"
 #include "MapView.h"
 #include <esp_heap_caps.h>
-#include <SD_MMC.h>
+#include "SdCard.h"
 #ifndef STANDALONE_NO_BT
   #include <BLEDevice.h>
 #endif
@@ -119,6 +119,45 @@ static void bleSlowAdvertising(bool slow) {
 }
 
 // nothing to render while the screen sleeps, so drop to 80 MHz
+// boards with a dedicated button that toggles the screen lock
+#if defined(SEEED_WIO_TRACKER_L2) || defined(LILYGO_TDECK)
+  #define HAS_WAKE_BUTTON 1
+#endif
+
+#ifdef HAS_PHYSICAL_KEYBOARD
+// Physical keys type into whichever on-screen keyboard is showing: its
+// textarea is the field being edited. The topmost visible one wins.
+static lv_obj_t* visibleKeyboard(lv_obj_t* root) {
+  lv_obj_t* found = NULL;
+  lv_obj_tree_walk(root, [](lv_obj_t* obj, void* user) -> lv_obj_tree_walk_res_t {
+    if (lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) return LV_OBJ_TREE_WALK_SKIP_CHILDREN;
+    if (lv_obj_check_type(obj, &lv_keyboard_class) && lv_keyboard_get_textarea(obj) != NULL) {
+      *(lv_obj_t**) user = obj;   // keep walking: later siblings draw on top
+    }
+    return LV_OBJ_TREE_WALK_NEXT;
+  }, &found);
+  return found;
+}
+
+static void physicalKey(uint8_t key) {
+  lv_obj_t* kb = visibleKeyboard(lv_layer_top());
+  if (kb == NULL) kb = visibleKeyboard(lv_screen_active());
+  if (kb == NULL) return;
+  lv_obj_t* ta = lv_keyboard_get_textarea(kb);
+
+  if (key == '\r' || key == '\n') {
+    // same sequence as the on-screen OK key
+    if (lv_obj_send_event(kb, LV_EVENT_READY, NULL) == LV_RESULT_OK) {
+      lv_obj_send_event(ta, LV_EVENT_READY, NULL);
+    }
+  } else if (key == 0x08) {
+    lv_textarea_delete_char(ta);
+  } else if (key >= 0x20 && key < 0x7F) {
+    lv_textarea_add_char(ta, (uint32_t) key);
+  }
+}
+#endif
+
 static void screenPower(bool asleep) {
   setCpuFrequencyMhz(asleep ? 80 : 240);
 }
@@ -369,12 +408,12 @@ static File gps_log;
 static uint32_t gps_log_lines = 0;
 static void gpsLogLine(const char* line) {
   if (!gps_log) {
-    if (SD_MMC.cardType() == CARD_NONE || SD_MMC.cardType() == CARD_UNKNOWN) return;
-    gps_log = SD_MMC.open("/gps_nmea.log", FILE_APPEND);
+    if (!uiSdPresent()) return;
+    gps_log = UI_SD.open("/gps_nmea.log", FILE_APPEND);
     if (!gps_log) return;
     if (gps_log.size() > 2000000) {
       gps_log.close();
-      gps_log = SD_MMC.open("/gps_nmea.log", FILE_WRITE);
+      gps_log = UI_SD.open("/gps_nmea.log", FILE_WRITE);
       if (!gps_log) return;
     }
     gps_log.printf("--- boot +%lums ---\n", millis());
@@ -1148,8 +1187,8 @@ void UITask::loop() {
     _next_status_refresh = millis() + 2000;
   }
 
-#ifdef SEEED_WIO_TRACKER_L2
-  // WAKE button (top edge, on the IO expander): toggles screen lock
+#ifdef HAS_WAKE_BUTTON
+  // WAKE button (L2: top edge, T-Deck: trackball click): toggles screen lock
   if (millis() > _next_wake_poll) {
     _next_wake_poll = millis() + 150;
     bool pressed = board.readWakeButton();
@@ -1171,6 +1210,14 @@ void UITask::loop() {
       }
     }
     _wake_prev = pressed;
+  }
+#endif
+
+#ifdef HAS_PHYSICAL_KEYBOARD
+  uint8_t key = board.readKeyboard();
+  if (key != 0 && !_display_asleep) {
+    lv_display_trigger_activity(NULL);   // typing counts as activity for auto-off
+    physicalKey(key);
   }
 #endif
 
