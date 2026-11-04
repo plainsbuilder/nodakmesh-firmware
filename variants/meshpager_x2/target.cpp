@@ -13,7 +13,7 @@ WRAPPER_CLASS radio_driver(radio, board);
 ESP32RTCClock fallback_clock;
 AutoDiscoverRTCClock rtc_clock(fallback_clock);
 MicroNMEALocationProvider gps(Serial1, &rtc_clock);
-EnvironmentSensorManager sensors(gps);
+MeshPagerX2SensorManager sensors(gps);
 
 // Wio-LR2021 RF switch on DIO5/DIO6, from Seeed's BSP (ral_lr20xx_bsp.c)
 static const uint32_t rfswitch_dio_pins[Module::RFSWITCH_MAX_PINS] = {
@@ -39,6 +39,31 @@ bool radio_init() {
   bool ok = radio.std_init(&spi);
   MESH_DEBUG_PRINTLN("radio_init: LR2021 %s", ok ? "OK" : "FAILED");
   return ok;
+}
+
+bool MeshPagerX2SensorManager::begin() {
+  bool ok = EnvironmentSensorManager::begin();   // also starts Wire1 on 47/48
+
+  baro_ok = spa06.begin(SPA06_003_DEFAULT_ADDR, &Wire1);
+  if (baro_ok) {
+    spa06.setPressureOversampling(SPA06_003_OVERSAMPLE_8);
+    spa06.setTemperatureOversampling(SPA06_003_OVERSAMPLE_8);
+    // 1 Hz continuous keeps reads non-blocking at minimal power cost
+    spa06.setPressureMeasureRate(SPA06_003_RATE_1);
+    spa06.setTemperatureMeasureRate(SPA06_003_RATE_1);
+    spa06.setMeasurementMode(SPA06_003_MEAS_CONTINUOUS_BOTH);
+  }
+  MESH_DEBUG_PRINTLN("sensors: SPA06 %s", baro_ok ? "OK" : "not found");
+  return ok;
+}
+
+bool MeshPagerX2SensorManager::querySensors(uint8_t requester_permissions, CayenneLPP& telemetry) {
+  EnvironmentSensorManager::querySensors(requester_permissions, telemetry);
+  if ((requester_permissions & TELEM_PERM_ENVIRONMENT) && baro_ok) {
+    telemetry.addTemperature(TELEM_CHANNEL_SELF, spa06.readTemperature());
+    telemetry.addBarometricPressure(TELEM_CHANNEL_SELF, spa06.readPressure());
+  }
+  return true;
 }
 
 mesh::LocalIdentity radio_new_identity() {

@@ -3,8 +3,9 @@
 ESP32-S3R8 (8 MB PSRAM) + Wio-LR2021 + Airoha AG3335 GNSS, 2" ST7789P3
 320x240 display, 5-way d-pad, TCA6424 IO expander.
 
-Pin map from the board schematic (rev V01) cross-checked against Seeed's
-Meshtastic port, [meshtastic/firmware#11255](https://github.com/meshtastic/firmware/pull/11255).
+Pin map from Seeed's hardware block diagram and the board schematic (rev V01);
+power-up order from Seeed's Meshtastic port,
+[meshtastic/firmware#11255](https://github.com/meshtastic/firmware/pull/11255).
 None of it has run on hardware yet.
 
 ## Builds
@@ -30,8 +31,16 @@ navigation before it is useful on this board.
 4. **GNSS fix.** NMEA at 115200 on GPIO44 (RX) / GPIO43 (TX).
 5. **Battery reading.** GPIO1 behind a 2:1 divider; tune `ADC_MULTIPLIER`
    against a meter.
-6. **Sources disagree on:**
-   - Return key: expander P05 (Meshtastic) vs GPIO0 (schematic)
-   - Expander P06: power button (Meshtastic) vs charger status (schematic)
-   - SHT4x temperature/humidity (Meshtastic) vs SPA06 pressure (schematic, 0x77)
-   - Flash: 16 MB layout used here, schematic shows 32 MB
+6. **Barometer.** SPA06-003 at 0x77 on I2C1 should show up in telemetry.
+
+## Settled by the block diagram
+
+The Meshtastic port disagreed with the schematic on a few points; Seeed's
+block diagram sides with the schematic:
+
+- Return key is GPIO0 (shared with BOOT); expander P05 is unused.
+- Expander P06 is the charger STAT line, not a button.
+- No SHT4x: the environment sensor is the SPA06-003 barometer.
+- Flash is 32 MB (PY25Q256HB). The build still uses the 16 MB layout, which
+  runs fine on it; the top half is unused.
+- GNSS PPS is on GPIO21 (`PIN_GPS_PPS`, not used yet).

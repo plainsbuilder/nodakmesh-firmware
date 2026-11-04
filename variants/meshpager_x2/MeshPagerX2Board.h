@@ -11,9 +11,9 @@
 // expander at 0x22 on I2C0 (GPIO17/18). The board stays on only while the
 // expander drives PWR_HOLD high, so begin() must run before anything else.
 //
-// Pin map and power-up order come from the board schematic (rev V01) and
-// Seeed's Meshtastic port (meshtastic/firmware PR #11255). Alpha hardware:
-// verify against the unit before trusting any of this.
+// Pin map from Seeed's hardware block diagram and schematic (rev V01);
+// power-up order from Seeed's Meshtastic port (meshtastic/firmware PR #11255).
+// Alpha hardware: verify against the unit before trusting any of this.
 // ---------------------------------------------------------------------------
 
 #define TCA6424_ADDR   0x22
@@ -24,26 +24,27 @@
 #define EXP_PIN_BTN_LEFT      2   // input  - d-pad left
 #define EXP_PIN_BTN_RIGHT     3   // input  - d-pad right
 #define EXP_PIN_BTN_CONFIRM   4   // input  - d-pad centre
-#define EXP_PIN_BTN_RETURN    5   // input  - return (Meshtastic); test point on schematic
+#define EXP_PIN_UNUSED_P05    5   // input  - test point only
 #define EXP_PIN_CHG_STAT      6   // input  - BQ25302 charge status
 #define EXP_PIN_SD_DETECT     7   // input  - microSD card detect
 #define EXP_PIN_GNSS_RTC_INT  8   // output - AG3335 RTC wake
 #define EXP_PIN_GNSS_SLEEP    9   // output - AG3335 sleep control
 #define EXP_PIN_IMU_INT1     10   // input  - LSM6DSO INT1
-#define EXP_PIN_SEN_EN       12   // output - sensor rail
+#define EXP_PIN_SEN_EN       12   // output - sensor rail + audio codec LDO
 #define EXP_PIN_SD_EN        13   // output - microSD rail
 #define EXP_PIN_LCD_EN       14   // output - display rail
 #define EXP_PIN_GNSS_VRTC_EN 15   // output - GNSS backup supply
 #define EXP_PIN_GNSS_EN      16   // output - GNSS rail
 #define EXP_PIN_BAT_ADC_EN   17   // output - battery divider enable
 #define EXP_PIN_AUDIO_PA_EN  18   // output - speaker amp rail
-#define EXP_PIN_USB_IN       19   // input  - USB power present
+#define EXP_PIN_USB_IN       19   // input  - VBUS present
 #define EXP_PIN_PWR_HOLD     20   // output - power latch, must stay high
 #define EXP_PIN_LCD_RST      21   // output - display reset (active low)
 #define EXP_PIN_LORA_RST     22   // output - LR2021 reset (active low)
 #define EXP_PIN_GNSS_RST     23   // output - GNSS reset (active high pulse)
 
-#define X2_DPAD_MASK 0x3F         // P00..P05
+#define X2_DPAD_MASK 0x1F         // P00..P04
+#define PIN_RETURN_BTN 0          // Return key shares GPIO0 with BOOT, active low
 
 class MeshPagerX2Board : public ESP32Board {
 public:

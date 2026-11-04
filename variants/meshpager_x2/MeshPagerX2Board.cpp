@@ -138,6 +138,7 @@ void MeshPagerX2Board::begin() {
   ESP32Board::begin();  // starts Wire on PIN_BOARD_SDA/PIN_BOARD_SCL (17/18)
 
   pinMode(PIN_USER_BTN, INPUT);       // power button, active high, external pull
+  pinMode(PIN_RETURN_BTN, INPUT_PULLUP);
 
   expander_ok = initExpander();
   if (!expander_ok) {
